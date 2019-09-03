@@ -57,6 +57,11 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    train = avocado.load('plasticc_train', chunk=0, num_chunks=20)
+    import random
+    import matplotlib.pyplot as plt
+    obj = train.get_object(index=random.randint(0, len(train.objects)))
+    x, y = obj.get_2d_observations()
 
     # Load the featurizer. For now, we only have the PLAsTiCC featurizer
     # although this could be an option in the future.

@@ -10,6 +10,7 @@ from scipy.optimize import minimize
 from .instruments import band_central_wavelengths, band_plot_colors
 from .utils import logger
 
+
 class AstronomicalObject():
     """An astronomical object, with metadata and a lightcurve.
 
@@ -130,6 +131,40 @@ class AstronomicalObject():
             preprocessed_observations = self.observations
 
         return preprocessed_observations
+
+    def get_2d_observations(self):
+        """Return the data in the same form used to fit the GP
+
+        Returns
+        -------
+        observations : numpy.array, numpy.array
+            First array is time, band for every observation. This could have effects such as background subtraction
+            applied to it. Second array is the flux observed for this band at given time
+        """
+        observations = self.preprocess_observations()
+
+        wavelengths = observations['band'].map(band_central_wavelengths)
+        times = observations['time']
+
+        return np.vstack([times, wavelengths]).T, observations['flux']
+
+    def get_multivariate_observations(self):
+        """Return the data as a multivariate time series. Here, each band is represented as a separate time series.
+        Unfortunately, the bands are not lined up in time, so we cannot treat this as a single multi-variate time
+        series, but are forced to treat each band separately.
+
+        Returns
+        -------
+        observations: dict::(numpy.array, numpy.array)
+            Each array in the dictionary corresponds to the time series of one of the bands
+        """
+        observations = self.preprocess_observations()
+        bands_dictionary = {}
+        for band in band_central_wavelengths.keys():
+            band_obs = observations.loc[observations.band == band]
+            time, flux = np.array(band_obs.time), np.array(band_obs.flux)
+            bands_dictionary[band] = (time, flux)
+        return bands_dictionary
 
     def fit_gaussian_process(self, fix_scale=False, verbose=False,
                              guess_length_scale=20., **preprocessing_kwargs):
@@ -315,7 +350,7 @@ class AstronomicalObject():
         else:
             return predictions
 
-    def plot_light_curve(self, show_gp=True, verbose=False, axis=None,
+    def plot_light_curve(self, show_gp=True, choose_chunk=None, verbose=False, axis=None,
                          **kwargs):
         """Plot the object's light curve
 
@@ -324,6 +359,8 @@ class AstronomicalObject():
         show_gp : bool (optional)
             If True (default), the Gaussian process prediction is plotted along
             with the raw data.
+        choose_chunk: int (optional)
+            If given, will separate the data into chunks of time and only plot the selected chunk
         verbose : bool (optional)
             If True, print detailed information about the light curve and GP
             fit.
@@ -343,6 +380,10 @@ class AstronomicalObject():
                 self.fit_gaussian_process(verbose=verbose, **kwargs)
         else:
             observations = self.preprocess_observations(**kwargs)
+
+        if choose_chunk is not None:
+            dfs = self.separate_chunks()
+            observations = dfs[choose_chunk]
 
         # Figure out the times to plot. We go 10% past the edges of the
         # observations.
@@ -408,3 +449,26 @@ class AstronomicalObject():
             if key in ordered_keys:
                 continue
             print("%20s: %s" % (key, value))
+
+    def separate_chunks(self, time_threshold=50):
+        """
+        Chop the observations for the object into separate segments based on the long time periods with no observations
+        :param time_threshold: (float) Number of days that need to pass to consider a new chunk
+        :return: (list::pd.dataframes) A list of data-frames, one for each "chunk" of time
+        """
+        indices = [-1] + list(np.where(self.time_gaps > time_threshold)[0]) + [-2]
+        dfs = []
+        for i, idx in enumerate(indices[:-1]):
+            idx_next = indices[i + 1]
+            dfs.append(self.observations[idx + 1:idx_next])
+        return dfs
+
+    @property
+    def time_gaps(self):
+        """
+        Compute an array containing the gaps between each observation
+        :return: (numpy.array) Array containing the number of gaps between every observation
+        """
+        observations = self.preprocess_observations()
+        time = np.array(observations.time)
+        return np.array([time[i + 1] - time[i] for i in range(len(time) - 1)])
