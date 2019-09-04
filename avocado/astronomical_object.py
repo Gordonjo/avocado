@@ -146,7 +146,7 @@ class AstronomicalObject():
         wavelengths = observations['band'].map(band_central_wavelengths)
         times = observations['time']
 
-        return np.vstack([times, wavelengths]).T, observations['flux']
+        return np.vstack([times, wavelengths]).T, np.array(observations['flux'])
 
     def get_multivariate_observations(self):
         """Return the data as a multivariate time series. Here, each band is represented as a separate time series.
